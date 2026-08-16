@@ -110,6 +110,7 @@ export interface SiteSettings {
   seo_title: string;
   seo_description: string;
   available_for_hire: boolean;
+  admin_password?: string;
   updated_at: string;
 }
 
@@ -126,3 +127,17 @@ export interface ToastMessage {
   title: string;
   message?: string;
 }
+
+export interface Inquiry {
+  id: string;
+  name: string;
+  handle: string;
+  service: string;
+  polyBudget?: string;
+  timeline?: string;
+  budget?: string;
+  description: string;
+  status: 'New' | 'In Review' | 'Accepted' | 'Archived';
+  created_at: string;
+}
+

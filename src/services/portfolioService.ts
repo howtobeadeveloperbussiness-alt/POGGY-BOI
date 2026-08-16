@@ -1,5 +1,17 @@
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Project, CurrentProject, UpcomingProject, Service, Skill, SiteSettings } from '../types';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  orderBy, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { db, isFirebaseConfigured } from '../lib/firebase';
+import { Project, CurrentProject, UpcomingProject, Service, Skill, SiteSettings, Inquiry } from '../types';
 
 const STORAGE_KEYS = {
   PROJECTS: 'pog_portfolio_projects',
@@ -8,12 +20,14 @@ const STORAGE_KEYS = {
   SERVICES: 'pog_portfolio_services',
   SKILLS: 'pog_portfolio_skills',
   SETTINGS: 'pog_portfolio_settings',
+  INQUIRIES: 'pog_portfolio_inquiries',
   ADMIN_SESSION: 'pog_admin_session_auth',
+  FIREBASE_SEEDED: 'pog_firebase_initial_seeded',
 };
 
-// Initial data based on existing POG portfolio content & services
+// Initial default data based on existing POG portfolio content & services
 export const INITIAL_SETTINGS: SiteSettings = {
-  id: 'site-config-default',
+  id: 'main_config',
   site_name: 'POG',
   hero_title: 'POG',
   hero_tagline: 'Roblox 3D Modeler & Digital Artist',
@@ -28,6 +42,7 @@ export const INITIAL_SETTINGS: SiteSettings = {
   seo_title: 'POG — Roblox 3D Modeler & Digital Artist',
   seo_description: 'Clean, optimized, game-ready assets for Roblox. Weapons, props, and environments built in Blender.',
   available_for_hire: true,
+  admin_password: 'LollyistheGOAT6711',
   updated_at: new Date().toISOString(),
 };
 
@@ -282,7 +297,7 @@ export const INITIAL_UPCOMING_PROJECTS: UpcomingProject[] = [
   },
 ];
 
-// Helper to get local data safely
+// Helper to get and set local data safely
 function getLocalItem<T>(key: string, defaultValue: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -304,16 +319,115 @@ function setLocalItem<T>(key: string, value: T): void {
   }
 }
 
-// Portfolio Service API
+// Portfolio Service API utilizing Firebase Firestore
 export const PortfolioService = {
+  // --- DATABASE INITIAL SEEDING & SYNCHRONIZATION ---
+  async seedInitialDataIfEmpty(): Promise<void> {
+    if (!isFirebaseConfigured || !db) return;
+    try {
+      // Check if projects exists in Firestore
+      const projSnap = await getDocs(collection(db, 'projects'));
+      const settingsSnap = await getDoc(doc(db, 'site_settings', 'main_config'));
+
+      if (projSnap.empty || !settingsSnap.exists()) {
+        // Seed all works (3D models)
+        for (const p of INITIAL_PROJECTS) {
+          await setDoc(doc(db, 'projects', p.id), p, { merge: true });
+        }
+        // Seed current projects (active games like TRIGGER)
+        for (const cp of INITIAL_CURRENT_PROJECTS) {
+          await setDoc(doc(db, 'current_projects', cp.id), cp, { merge: true });
+        }
+        // Seed upcoming projects (pipeline concepts)
+        for (const up of INITIAL_UPCOMING_PROJECTS) {
+          await setDoc(doc(db, 'upcoming_projects', up.id), up, { merge: true });
+        }
+        // Seed services
+        for (const s of INITIAL_SERVICES) {
+          await setDoc(doc(db, 'services', s.id), s, { merge: true });
+        }
+        // Seed skills
+        for (const sk of INITIAL_SKILLS) {
+          await setDoc(doc(db, 'skills', sk.id), sk, { merge: true });
+        }
+        // Seed site settings with admin password
+        await setDoc(doc(db, 'site_settings', 'main_config'), INITIAL_SETTINGS, { merge: true });
+      }
+      localStorage.setItem(STORAGE_KEYS.FIREBASE_SEEDED, 'true');
+    } catch (e) {
+      console.warn('Firebase auto-seed notice:', e);
+    }
+  },
+
+  async syncAllToFirebase(): Promise<{ success: boolean; message: string }> {
+    if (!isFirebaseConfigured || !db) {
+      return { success: false, message: 'Firebase is not initialized or configured.' };
+    }
+    try {
+      const projects = getLocalItem<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
+      const currentProjects = getLocalItem<CurrentProject[]>(STORAGE_KEYS.CURRENT_PROJECTS, INITIAL_CURRENT_PROJECTS);
+      const upcomingProjects = getLocalItem<UpcomingProject[]>(STORAGE_KEYS.UPCOMING_PROJECTS, INITIAL_UPCOMING_PROJECTS);
+      const services = getLocalItem<Service[]>(STORAGE_KEYS.SERVICES, INITIAL_SERVICES);
+      const skills = getLocalItem<Skill[]>(STORAGE_KEYS.SKILLS, INITIAL_SKILLS);
+      const settings = getLocalItem<SiteSettings>(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
+
+      // Save all Works
+      for (const p of projects) {
+        await setDoc(doc(db, 'projects', p.id), p, { merge: true });
+      }
+      // Save all Current Projects (Active Games like TRIGGER)
+      for (const cp of currentProjects) {
+        await setDoc(doc(db, 'current_projects', cp.id), cp, { merge: true });
+      }
+      // Save all Upcoming Projects (Pipeline)
+      for (const up of upcomingProjects) {
+        await setDoc(doc(db, 'upcoming_projects', up.id), up, { merge: true });
+      }
+      // Save all Services
+      for (const s of services) {
+        await setDoc(doc(db, 'services', s.id), s, { merge: true });
+      }
+      // Save all Skills
+      for (const sk of skills) {
+        await setDoc(doc(db, 'skills', sk.id), sk, { merge: true });
+      }
+      // Save Site Settings including Admin Password
+      const settingsToSave: SiteSettings = {
+        ...settings,
+        admin_password: settings.admin_password || 'LollyistheGOAT6711',
+        updated_at: new Date().toISOString(),
+      };
+      await setDoc(doc(db, 'site_settings', 'main_config'), settingsToSave, { merge: true });
+      setLocalItem(STORAGE_KEYS.SETTINGS, settingsToSave);
+
+      localStorage.setItem(STORAGE_KEYS.FIREBASE_SEEDED, 'true');
+      return {
+        success: true,
+        message: 'All works, upcoming projects, currently building projects, services, skills, and admin password successfully saved to Firebase Firestore!',
+      };
+    } catch (err: any) {
+      console.error('Error syncing all data to Firestore:', err);
+      throw err;
+    }
+  },
+
   // --- SITE SETTINGS ---
   async getSettings(): Promise<SiteSettings> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('site_settings').select('*').single();
-        if (!error && data) return data;
+        const docRef = doc(db, 'site_settings', 'main_config');
+        const snap = await getDoc(docRef);
+        if (snap.exists()) {
+          const data = snap.data() as SiteSettings;
+          setLocalItem(STORAGE_KEYS.SETTINGS, data);
+          return data;
+        } else {
+          // Initialize if document doesn't exist yet
+          await setDoc(docRef, INITIAL_SETTINGS);
+          return INITIAL_SETTINGS;
+        }
       } catch (e) {
-        console.warn('Supabase settings query error, using local data:', e);
+        console.warn('Firebase getSettings error, using cache:', e);
       }
     }
     return getLocalItem<SiteSettings>(STORAGE_KEYS.SETTINGS, INITIAL_SETTINGS);
@@ -321,26 +435,38 @@ export const PortfolioService = {
 
   async updateSettings(settings: Partial<SiteSettings>): Promise<SiteSettings> {
     const current = await this.getSettings();
-    const updated = { ...current, ...settings, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured && supabase) {
+    const updated: SiteSettings = { 
+      ...current, 
+      ...settings, 
+      id: 'main_config',
+      updated_at: new Date().toISOString() 
+    };
+    
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('site_settings').upsert(updated);
+        const docRef = doc(db, 'site_settings', 'main_config');
+        await setDoc(docRef, updated, { merge: true });
       } catch (e) {
-        console.warn('Supabase update error:', e);
+        console.warn('Firebase updateSettings error:', e);
       }
     }
     setLocalItem(STORAGE_KEYS.SETTINGS, updated);
     return updated;
   },
 
-  // --- PROJECTS (WORKS) ---
+  // --- PROJECTS (WORKS & 3D MODELS) ---
   async getProjects(): Promise<Project[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('projects').select('*').order('sort_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        const q = query(collection(db, 'projects'), orderBy('sort_order', 'asc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+          setLocalItem(STORAGE_KEYS.PROJECTS, list);
+          return list;
+        }
       } catch (e) {
-        console.warn('Supabase projects query error, using local data:', e);
+        console.warn('Firebase getProjects query error, using local data:', e);
       }
     }
     return getLocalItem<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
@@ -352,24 +478,22 @@ export const PortfolioService = {
   },
 
   async createProject(project: Omit<Project, 'id' | 'created_at'>): Promise<Project> {
+    const newId = 'proj-' + Date.now();
     const newProj: Project = {
       ...project,
-      id: 'proj-' + Date.now(),
+      id: newId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    if (isSupabaseConfigured && supabase) {
+
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('projects').insert(newProj).select().single();
-        if (!error && data) {
-          const list = await this.getProjects();
-          setLocalItem(STORAGE_KEYS.PROJECTS, [data, ...list]);
-          return data;
-        }
+        await setDoc(doc(db, 'projects', newId), newProj);
       } catch (e) {
-        console.warn('Supabase insert error:', e);
+        console.warn('Firebase createProject error:', e);
       }
     }
+
     const current = getLocalItem<Project[]>(STORAGE_KEYS.PROJECTS, INITIAL_PROJECTS);
     const updated = [newProj, ...current];
     setLocalItem(STORAGE_KEYS.PROJECTS, updated);
@@ -379,27 +503,34 @@ export const PortfolioService = {
   async updateProject(id: string, updates: Partial<Project>): Promise<Project> {
     const projects = await this.getProjects();
     const index = projects.findIndex(p => p.id === id);
-    if (index === -1) throw new Error('Project not found');
-    
-    const updatedProject = { ...projects[index], ...updates, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured && supabase) {
+    const updatedProject: Project = { 
+      ...(index !== -1 ? projects[index] : {} as Project), 
+      ...updates, 
+      id,
+      updated_at: new Date().toISOString() 
+    };
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('projects').update(updatedProject).eq('id', id);
+        await setDoc(doc(db, 'projects', id), updatedProject, { merge: true });
       } catch (e) {
-        console.warn('Supabase update error:', e);
+        console.warn('Firebase updateProject error:', e);
       }
     }
-    projects[index] = updatedProject;
-    setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+
+    if (index !== -1) {
+      projects[index] = updatedProject;
+      setLocalItem(STORAGE_KEYS.PROJECTS, projects);
+    }
     return updatedProject;
   },
 
   async deleteProject(id: string): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('projects').delete().eq('id', id);
+        await deleteDoc(doc(db, 'projects', id));
       } catch (e) {
-        console.warn('Supabase delete error:', e);
+        console.warn('Firebase deleteProject error:', e);
       }
     }
     const projects = await this.getProjects();
@@ -407,33 +538,41 @@ export const PortfolioService = {
     setLocalItem(STORAGE_KEYS.PROJECTS, filtered);
   },
 
-  // --- CURRENT PROJECTS ---
+  // --- CURRENT PROJECTS (ACTIVE GAMES LIKE TRIGGER) ---
   async getCurrentProjects(): Promise<CurrentProject[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('current_projects').select('*').order('sort_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        const q = query(collection(db, 'current_projects'), orderBy('sort_order', 'asc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as CurrentProject));
+          setLocalItem(STORAGE_KEYS.CURRENT_PROJECTS, list);
+          return list;
+        }
       } catch (e) {
-        console.warn('Supabase query error:', e);
+        console.warn('Firebase getCurrentProjects error:', e);
       }
     }
     return getLocalItem<CurrentProject[]>(STORAGE_KEYS.CURRENT_PROJECTS, INITIAL_CURRENT_PROJECTS);
   },
 
   async createCurrentProject(proj: Omit<CurrentProject, 'id' | 'created_at'>): Promise<CurrentProject> {
+    const newId = 'curr-' + Date.now();
     const newProj: CurrentProject = {
       ...proj,
-      id: 'curr-' + Date.now(),
+      id: newId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    if (isSupabaseConfigured && supabase) {
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('current_projects').insert(newProj);
+        await setDoc(doc(db, 'current_projects', newId), newProj);
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase createCurrentProject error:', e);
       }
     }
+
     const list = await this.getCurrentProjects();
     const updated = [...list, newProj];
     setLocalItem(STORAGE_KEYS.CURRENT_PROJECTS, updated);
@@ -443,59 +582,75 @@ export const PortfolioService = {
   async updateCurrentProject(id: string, updates: Partial<CurrentProject>): Promise<CurrentProject> {
     const list = await this.getCurrentProjects();
     const idx = list.findIndex(p => p.id === id);
-    if (idx === -1) throw new Error('Current project not found');
-    const updated = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured && supabase) {
+    const updated: CurrentProject = { 
+      ...(idx !== -1 ? list[idx] : {} as CurrentProject), 
+      ...updates, 
+      id,
+      updated_at: new Date().toISOString() 
+    };
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('current_projects').update(updated).eq('id', id);
+        await setDoc(doc(db, 'current_projects', id), updated, { merge: true });
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase updateCurrentProject error:', e);
       }
     }
-    list[idx] = updated;
-    setLocalItem(STORAGE_KEYS.CURRENT_PROJECTS, list);
+
+    if (idx !== -1) {
+      list[idx] = updated;
+      setLocalItem(STORAGE_KEYS.CURRENT_PROJECTS, list);
+    }
     return updated;
   },
 
   async deleteCurrentProject(id: string): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('current_projects').delete().eq('id', id);
+        await deleteDoc(doc(db, 'current_projects', id));
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase deleteCurrentProject error:', e);
       }
     }
     const list = await this.getCurrentProjects();
     setLocalItem(STORAGE_KEYS.CURRENT_PROJECTS, list.filter(p => p.id !== id));
   },
 
-  // --- UPCOMING PROJECTS ---
+  // --- UPCOMING PROJECTS (PIPELINE) ---
   async getUpcomingProjects(): Promise<UpcomingProject[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('upcoming_projects').select('*').order('sort_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        const q = query(collection(db, 'upcoming_projects'), orderBy('sort_order', 'asc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as UpcomingProject));
+          setLocalItem(STORAGE_KEYS.UPCOMING_PROJECTS, list);
+          return list;
+        }
       } catch (e) {
-        console.warn('Supabase query error:', e);
+        console.warn('Firebase getUpcomingProjects error:', e);
       }
     }
     return getLocalItem<UpcomingProject[]>(STORAGE_KEYS.UPCOMING_PROJECTS, INITIAL_UPCOMING_PROJECTS);
   },
 
   async createUpcomingProject(proj: Omit<UpcomingProject, 'id' | 'created_at'>): Promise<UpcomingProject> {
+    const newId = 'upc-' + Date.now();
     const newProj: UpcomingProject = {
       ...proj,
-      id: 'upc-' + Date.now(),
+      id: newId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    if (isSupabaseConfigured && supabase) {
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('upcoming_projects').insert(newProj);
+        await setDoc(doc(db, 'upcoming_projects', newId), newProj);
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase createUpcomingProject error:', e);
       }
     }
+
     const list = await this.getUpcomingProjects();
     const updated = [...list, newProj];
     setLocalItem(STORAGE_KEYS.UPCOMING_PROJECTS, updated);
@@ -505,26 +660,34 @@ export const PortfolioService = {
   async updateUpcomingProject(id: string, updates: Partial<UpcomingProject>): Promise<UpcomingProject> {
     const list = await this.getUpcomingProjects();
     const idx = list.findIndex(p => p.id === id);
-    if (idx === -1) throw new Error('Upcoming project not found');
-    const updated = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured && supabase) {
+    const updated: UpcomingProject = { 
+      ...(idx !== -1 ? list[idx] : {} as UpcomingProject), 
+      ...updates, 
+      id,
+      updated_at: new Date().toISOString() 
+    };
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('upcoming_projects').update(updated).eq('id', id);
+        await setDoc(doc(db, 'upcoming_projects', id), updated, { merge: true });
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase updateUpcomingProject error:', e);
       }
     }
-    list[idx] = updated;
-    setLocalItem(STORAGE_KEYS.UPCOMING_PROJECTS, list);
+
+    if (idx !== -1) {
+      list[idx] = updated;
+      setLocalItem(STORAGE_KEYS.UPCOMING_PROJECTS, list);
+    }
     return updated;
   },
 
   async deleteUpcomingProject(id: string): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('upcoming_projects').delete().eq('id', id);
+        await deleteDoc(doc(db, 'upcoming_projects', id));
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase deleteUpcomingProject error:', e);
       }
     }
     const list = await this.getUpcomingProjects();
@@ -533,31 +696,39 @@ export const PortfolioService = {
 
   // --- SERVICES ---
   async getServices(): Promise<Service[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('services').select('*').order('sort_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        const q = query(collection(db, 'services'), orderBy('sort_order', 'asc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+          setLocalItem(STORAGE_KEYS.SERVICES, list);
+          return list;
+        }
       } catch (e) {
-        console.warn('Supabase query error:', e);
+        console.warn('Firebase getServices error:', e);
       }
     }
     return getLocalItem<Service[]>(STORAGE_KEYS.SERVICES, INITIAL_SERVICES);
   },
 
   async createService(service: Omit<Service, 'id' | 'created_at'>): Promise<Service> {
+    const newId = 'srv-' + Date.now();
     const newService: Service = {
       ...service,
-      id: 'srv-' + Date.now(),
+      id: newId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
-    if (isSupabaseConfigured && supabase) {
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('services').insert(newService);
+        await setDoc(doc(db, 'services', newId), newService);
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase createService error:', e);
       }
     }
+
     const list = await this.getServices();
     const updated = [...list, newService];
     setLocalItem(STORAGE_KEYS.SERVICES, updated);
@@ -567,26 +738,34 @@ export const PortfolioService = {
   async updateService(id: string, updates: Partial<Service>): Promise<Service> {
     const list = await this.getServices();
     const idx = list.findIndex(s => s.id === id);
-    if (idx === -1) throw new Error('Service not found');
-    const updated = { ...list[idx], ...updates, updated_at: new Date().toISOString() };
-    if (isSupabaseConfigured && supabase) {
+    const updated: Service = { 
+      ...(idx !== -1 ? list[idx] : {} as Service), 
+      ...updates, 
+      id,
+      updated_at: new Date().toISOString() 
+    };
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('services').update(updated).eq('id', id);
+        await setDoc(doc(db, 'services', id), updated, { merge: true });
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase updateService error:', e);
       }
     }
-    list[idx] = updated;
-    setLocalItem(STORAGE_KEYS.SERVICES, list);
+
+    if (idx !== -1) {
+      list[idx] = updated;
+      setLocalItem(STORAGE_KEYS.SERVICES, list);
+    }
     return updated;
   },
 
   async deleteService(id: string): Promise<void> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('services').delete().eq('id', id);
+        await deleteDoc(doc(db, 'services', id));
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase deleteService error:', e);
       }
     }
     const list = await this.getServices();
@@ -595,12 +774,17 @@ export const PortfolioService = {
 
   // --- SKILLS ---
   async getSkills(): Promise<Skill[]> {
-    if (isSupabaseConfigured && supabase) {
+    if (isFirebaseConfigured && db) {
       try {
-        const { data, error } = await supabase.from('skills').select('*').order('sort_order', { ascending: true });
-        if (!error && data && data.length > 0) return data;
+        const q = query(collection(db, 'skills'), orderBy('sort_order', 'asc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Skill));
+          setLocalItem(STORAGE_KEYS.SKILLS, list);
+          return list;
+        }
       } catch (e) {
-        console.warn('Supabase query error:', e);
+        console.warn('Firebase getSkills error:', e);
       }
     }
     return getLocalItem<Skill[]>(STORAGE_KEYS.SKILLS, INITIAL_SKILLS);
@@ -609,45 +793,96 @@ export const PortfolioService = {
   async updateSkill(id: string, updates: Partial<Skill>): Promise<Skill> {
     const list = await this.getSkills();
     const idx = list.findIndex(s => s.id === id);
-    if (idx === -1) throw new Error('Skill not found');
-    const updated = { ...list[idx], ...updates };
-    if (isSupabaseConfigured && supabase) {
+    const updated: Skill = { 
+      ...(idx !== -1 ? list[idx] : {} as Skill), 
+      ...updates, 
+      id 
+    };
+
+    if (isFirebaseConfigured && db) {
       try {
-        await supabase.from('skills').update(updated).eq('id', id);
+        await setDoc(doc(db, 'skills', id), updated, { merge: true });
       } catch (e) {
-        console.warn(e);
+        console.warn('Firebase updateSkill error:', e);
       }
     }
-    list[idx] = updated;
-    setLocalItem(STORAGE_KEYS.SKILLS, list);
+
+    if (idx !== -1) {
+      list[idx] = updated;
+      setLocalItem(STORAGE_KEYS.SKILLS, list);
+    }
     return updated;
+  },
+
+  // --- INQUIRIES & CONTACT BRIEFS ---
+  async submitInquiry(inquiry: Omit<Inquiry, 'id' | 'created_at' | 'status'>): Promise<Inquiry> {
+    const newId = 'inq-' + Date.now();
+    const newInquiry: Inquiry = {
+      ...inquiry,
+      id: newId,
+      status: 'New',
+      created_at: new Date().toISOString(),
+    };
+
+    if (isFirebaseConfigured && db) {
+      try {
+        await setDoc(doc(db, 'inquiries', newId), newInquiry);
+      } catch (e) {
+        console.warn('Firebase submitInquiry error:', e);
+      }
+    }
+
+    const current = getLocalItem<Inquiry[]>(STORAGE_KEYS.INQUIRIES, []);
+    const updated = [newInquiry, ...current];
+    setLocalItem(STORAGE_KEYS.INQUIRIES, updated);
+    return newInquiry;
+  },
+
+  async getInquiries(): Promise<Inquiry[]> {
+    if (isFirebaseConfigured && db) {
+      try {
+        const q = query(collection(db, 'inquiries'), orderBy('created_at', 'desc'));
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          const list = snap.docs.map(d => ({ id: d.id, ...d.data() } as Inquiry));
+          setLocalItem(STORAGE_KEYS.INQUIRIES, list);
+          return list;
+        }
+      } catch (e) {
+        console.warn('Firebase getInquiries error:', e);
+      }
+    }
+    return getLocalItem<Inquiry[]>(STORAGE_KEYS.INQUIRIES, []);
+  },
+
+  async updateInquiryStatus(id: string, status: Inquiry['status']): Promise<void> {
+    if (isFirebaseConfigured && db) {
+      try {
+        await updateDoc(doc(db, 'inquiries', id), { status });
+      } catch (e) {
+        console.warn('Firebase updateInquiryStatus error:', e);
+      }
+    }
+    const current = getLocalItem<Inquiry[]>(STORAGE_KEYS.INQUIRIES, []);
+    const updated = current.map(item => item.id === id ? { ...item, status } : item);
+    setLocalItem(STORAGE_KEYS.INQUIRIES, updated);
+  },
+
+  async deleteInquiry(id: string): Promise<void> {
+    if (isFirebaseConfigured && db) {
+      try {
+        await deleteDoc(doc(db, 'inquiries', id));
+      } catch (e) {
+        console.warn('Firebase deleteInquiry error:', e);
+      }
+    }
+    const current = getLocalItem<Inquiry[]>(STORAGE_KEYS.INQUIRIES, []);
+    setLocalItem(STORAGE_KEYS.INQUIRIES, current.filter(item => item.id !== id));
   },
 
   // --- ASSET UPLOADER ---
   async uploadAsset(file: File): Promise<string> {
-    if (isSupabaseConfigured && supabase) {
-      try {
-        const fileExt = file.name.split('.').pop();
-        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${fileExt}`;
-        const filePath = `uploads/${fileName}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from('portfolio-assets')
-          .upload(filePath, file, {
-            cacheControl: '3600',
-            upsert: false,
-          });
-
-        if (!uploadError) {
-          const { data } = supabase.storage.from('portfolio-assets').getPublicUrl(filePath);
-          if (data?.publicUrl) return data.publicUrl;
-        }
-      } catch (e) {
-        console.warn('Supabase storage upload failed, converting to optimized data URL:', e);
-      }
-    }
-
-    // Fallback: Read as high quality Data URL
+    // Read as optimized Data URL for instant rendering and persistence
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
@@ -657,12 +892,35 @@ export const PortfolioService = {
   },
 
   // --- RESET TO DEFAULTS ---
-  resetAllData(): void {
+  async resetAllData(): Promise<void> {
     localStorage.setItem(STORAGE_KEYS.PROJECTS, JSON.stringify(INITIAL_PROJECTS));
     localStorage.setItem(STORAGE_KEYS.CURRENT_PROJECTS, JSON.stringify(INITIAL_CURRENT_PROJECTS));
     localStorage.setItem(STORAGE_KEYS.UPCOMING_PROJECTS, JSON.stringify(INITIAL_UPCOMING_PROJECTS));
     localStorage.setItem(STORAGE_KEYS.SERVICES, JSON.stringify(INITIAL_SERVICES));
     localStorage.setItem(STORAGE_KEYS.SKILLS, JSON.stringify(INITIAL_SKILLS));
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(INITIAL_SETTINGS));
+
+    if (isFirebaseConfigured && db) {
+      try {
+        for (const p of INITIAL_PROJECTS) {
+          await setDoc(doc(db, 'projects', p.id), p);
+        }
+        for (const cp of INITIAL_CURRENT_PROJECTS) {
+          await setDoc(doc(db, 'current_projects', cp.id), cp);
+        }
+        for (const up of INITIAL_UPCOMING_PROJECTS) {
+          await setDoc(doc(db, 'upcoming_projects', up.id), up);
+        }
+        for (const s of INITIAL_SERVICES) {
+          await setDoc(doc(db, 'services', s.id), s);
+        }
+        for (const sk of INITIAL_SKILLS) {
+          await setDoc(doc(db, 'skills', sk.id), sk);
+        }
+        await setDoc(doc(db, 'site_settings', 'main_config'), INITIAL_SETTINGS);
+      } catch (e) {
+        console.warn('Firebase reset error:', e);
+      }
+    }
   }
 };

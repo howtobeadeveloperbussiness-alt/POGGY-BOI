@@ -1,0 +1,52 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function
+    function isValidString(val, minLen, maxLen) {
+      return val is string && val.size() >= minLen && val.size() <= maxLen;
+    }
+
+    // Projects (Works & 3D Models)
+    match /projects/{projectId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Current Projects (Active Games & Experiences like TRIGGER)
+    match /current_projects/{projectId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Upcoming Projects (Pipeline Concepts)
+    match /upcoming_projects/{projectId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Services
+    match /services/{serviceId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Skills
+    match /skills/{skillId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Site Settings
+    match /site_settings/{settingId} {
+      allow read: if true;
+      allow write: if true;
+    }
+
+    // Commission Inquiries & Contact Forms
+    match /inquiries/{inquiryId} {
+      allow read: if true;
+      allow create: if true;
+      allow update, delete: if true;
+    }
+  }
+}

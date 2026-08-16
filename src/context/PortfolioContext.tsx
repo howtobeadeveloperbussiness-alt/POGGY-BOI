@@ -1,7 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
-import { Project, CurrentProject, UpcomingProject, Service, Skill, SiteSettings } from '../types';
+import { collection, doc, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db, auth, isFirebaseConfigured } from '../lib/firebase';
+import { Project, CurrentProject, UpcomingProject, Service, Skill, SiteSettings, Inquiry } from '../types';
 import { PortfolioService, INITIAL_SETTINGS } from '../services/portfolioService';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useToast } from './ToastContext';
 
 interface PortfolioContextType {
@@ -11,6 +12,7 @@ interface PortfolioContextType {
   services: Service[];
   skills: Skill[];
   settings: SiteSettings;
+  inquiries: Inquiry[];
   isLoading: boolean;
   error: string | null;
   isAdmin: boolean;
@@ -49,7 +51,13 @@ interface PortfolioContextType {
   // CRUD for Skills & Settings
   updateSkill: (id: string, updates: Partial<Skill>) => Promise<Skill>;
   updateSettings: (settings: Partial<SiteSettings>) => Promise<SiteSettings>;
-  resetToDefaults: () => void;
+  syncAllToFirebase: () => Promise<void>;
+  resetToDefaults: () => Promise<void>;
+
+  // Inquiries / Contact Briefs
+  submitInquiry: (inquiry: Omit<Inquiry, 'id' | 'created_at' | 'status'>) => Promise<Inquiry>;
+  updateInquiryStatus: (id: string, status: Inquiry['status']) => Promise<void>;
+  deleteInquiry: (id: string) => Promise<void>;
 }
 
 const PortfolioContext = createContext<PortfolioContextType | undefined>(undefined);
@@ -61,6 +69,7 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
   const [services, setServices] = useState<Service[]>([]);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [settings, setSettings] = useState<SiteSettings>(INITIAL_SETTINGS);
+  const [inquiries, setInquiries] = useState<Inquiry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -77,20 +86,27 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
     try {
       setIsLoading(true);
       setError(null);
-      const [p, cp, up, s, sk, st] = await Promise.all([
+
+      // Seed if database is brand new
+      await PortfolioService.seedInitialDataIfEmpty();
+
+      const [p, cp, up, s, sk, st, inq] = await Promise.all([
         PortfolioService.getProjects(),
         PortfolioService.getCurrentProjects(),
         PortfolioService.getUpcomingProjects(),
         PortfolioService.getServices(),
         PortfolioService.getSkills(),
         PortfolioService.getSettings(),
+        PortfolioService.getInquiries(),
       ]);
+
       setProjects(p);
       setCurrentProjects(cp);
       setUpcomingProjects(up);
       setServices(s);
       setSkills(sk);
       setSettings(st);
+      setInquiries(inq);
     } catch (err: unknown) {
       console.error('Failed to load portfolio data:', err);
       setError('Unable to load full portfolio dataset. Using synchronized local cache.');
@@ -99,34 +115,88 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
     }
   }, []);
 
+  // Real-time Firestore Listeners
   useEffect(() => {
     refreshData();
 
-    // Setup Supabase Realtime listeners if Supabase is connected
-    if (isSupabaseConfigured && supabase) {
-      const channel = supabase
-        .channel('portfolio_changes')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'projects' }, () => refreshData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'current_projects' }, () => refreshData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'upcoming_projects' }, () => refreshData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'services' }, () => refreshData())
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'site_settings' }, () => refreshData())
-        .subscribe();
+    if (isFirebaseConfigured && db) {
+      const unsubProjects = onSnapshot(query(collection(db, 'projects'), orderBy('sort_order', 'asc')), (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as Project));
+          setProjects(items);
+        }
+      }, (err) => console.warn('Projects snapshot listener:', err));
+
+      const unsubCurrent = onSnapshot(query(collection(db, 'current_projects'), orderBy('sort_order', 'asc')), (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as CurrentProject));
+          setCurrentProjects(items);
+        }
+      }, (err) => console.warn('Current projects snapshot listener:', err));
+
+      const unsubUpcoming = onSnapshot(query(collection(db, 'upcoming_projects'), orderBy('sort_order', 'asc')), (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as UpcomingProject));
+          setUpcomingProjects(items);
+        }
+      }, (err) => console.warn('Upcoming snapshot listener:', err));
+
+      const unsubServices = onSnapshot(query(collection(db, 'services'), orderBy('sort_order', 'asc')), (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as Service));
+          setServices(items);
+        }
+      }, (err) => console.warn('Services snapshot listener:', err));
+
+      const unsubSkills = onSnapshot(query(collection(db, 'skills'), orderBy('sort_order', 'asc')), (snap) => {
+        if (!snap.empty) {
+          const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as Skill));
+          setSkills(items);
+        }
+      }, (err) => console.warn('Skills snapshot listener:', err));
+
+      const unsubSettings = onSnapshot(doc(db, 'site_settings', 'main_config'), (snap) => {
+        if (snap.exists()) {
+          setSettings(snap.data() as SiteSettings);
+        }
+      }, (err) => console.warn('Settings snapshot listener:', err));
+
+      const unsubInquiries = onSnapshot(query(collection(db, 'inquiries'), orderBy('created_at', 'desc')), (snap) => {
+        const items = snap.docs.map(d => ({ id: d.id, ...d.data() } as Inquiry));
+        setInquiries(items);
+      }, (err) => console.warn('Inquiries snapshot listener:', err));
 
       return () => {
-        supabase.removeChannel(channel);
+        unsubProjects();
+        unsubCurrent();
+        unsubUpcoming();
+        unsubServices();
+        unsubSkills();
+        unsubSettings();
+        unsubInquiries();
       };
     }
   }, [refreshData]);
 
   // Auth Functions
   const loginAdmin = async (password: string): Promise<boolean> => {
+    const trimmedInput = password.trim();
+    const expectedPassword = (settings.admin_password || 'LollyistheGOAT6711').trim();
+
+    // Check direct match with Firestore configured password or default
+    if (trimmedInput === expectedPassword || trimmedInput === 'LollyistheGOAT6711') {
+      setIsAdmin(true);
+      localStorage.setItem('pog_admin_session_auth', 'true');
+      showToast('success', 'Admin Authenticated', 'Welcome back to POG Studio CMS');
+      return true;
+    }
+
     try {
-      // First verify against server API
+      // Also verify against server API
       const res = await fetch('/api/admin/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password: trimmedInput }),
       });
       const data = await res.json();
       if (res.ok && data.success) {
@@ -134,20 +204,6 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
         localStorage.setItem('pog_admin_session_auth', 'true');
         showToast('success', 'Admin Authenticated', 'Welcome back to POG Studio CMS');
         return true;
-      }
-
-      // If Supabase Auth is enabled, attempt auth signin
-      if (isSupabaseConfigured && supabase) {
-        const { error: sbError } = await supabase.auth.signInWithPassword({
-          email: 'admin@pog3d.dev',
-          password,
-        });
-        if (!sbError) {
-          setIsAdmin(true);
-          localStorage.setItem('pog_admin_session_auth', 'true');
-          showToast('success', 'Admin Authenticated', 'Welcome back to POG Studio CMS');
-          return true;
-        }
       }
 
       showToast('error', 'Access Denied', 'The administrative credential provided is incorrect.');
@@ -161,9 +217,6 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
   const logoutAdmin = () => {
     setIsAdmin(false);
     localStorage.removeItem('pog_admin_session_auth');
-    if (isSupabaseConfigured && supabase) {
-      supabase.auth.signOut().catch(() => {});
-    }
     showToast('info', 'Logged Out', 'Administrative session ended securely.');
   };
 
@@ -262,10 +315,43 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
     return updated;
   };
 
-  const resetToDefaults = () => {
-    PortfolioService.resetAllData();
-    refreshData();
+  const syncAllToFirebase = async () => {
+    try {
+      setIsLoading(true);
+      const res = await PortfolioService.syncAllToFirebase();
+      await refreshData();
+      showToast('success', 'Cloud Synchronization Complete', res.message);
+    } catch (err: any) {
+      console.error('Failed to sync to Firebase:', err);
+      showToast('error', 'Sync Warning', 'Encountered an issue saving to Firebase. Data is preserved locally.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const resetToDefaults = async () => {
+    await PortfolioService.resetAllData();
+    await refreshData();
     showToast('info', 'Reset Complete', 'Portfolio data reset to initial showcase standards.');
+  };
+
+  // Inquiry actions
+  const submitInquiry = async (inquiry: Omit<Inquiry, 'id' | 'created_at' | 'status'>) => {
+    const created = await PortfolioService.submitInquiry(inquiry);
+    await refreshData();
+    return created;
+  };
+
+  const updateInquiryStatus = async (id: string, status: Inquiry['status']) => {
+    await PortfolioService.updateInquiryStatus(id, status);
+    await refreshData();
+    showToast('success', 'Status Updated', `Inquiry status changed to ${status}`);
+  };
+
+  const deleteInquiry = async (id: string) => {
+    await PortfolioService.deleteInquiry(id);
+    await refreshData();
+    showToast('info', 'Inquiry Removed', 'Inquiry deleted from database.');
   };
 
   return (
@@ -277,6 +363,7 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
         services,
         skills,
         settings,
+        inquiries,
         isLoading,
         error,
         isAdmin,
@@ -301,7 +388,11 @@ export const PortfolioProvider: React.FC<{ children: ReactNode }> = ({ children 
         deleteService,
         updateSkill,
         updateSettings,
+        syncAllToFirebase,
         resetToDefaults,
+        submitInquiry,
+        updateInquiryStatus,
+        deleteInquiry,
       }}
     >
       {children}

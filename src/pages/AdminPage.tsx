@@ -19,14 +19,22 @@ import {
   CheckCircle2,
   Tag,
   Boxes,
-  Compass
+  Compass,
+  Inbox,
+  MessageSquare,
+  Clock,
+  Archive,
+  Check,
+  CloudUpload,
+  KeyRound,
+  Database
 } from 'lucide-react';
 import { usePortfolio } from '../context/PortfolioContext';
 import { useToast } from '../context/ToastContext';
-import { Project, CurrentProject, UpcomingProject, Service, Skill } from '../types';
+import { Project, CurrentProject, UpcomingProject, Service, Skill, Inquiry } from '../types';
 import { ConfirmModal } from '../components/ConfirmModal';
 
-type AdminTab = 'works' | 'current' | 'upcoming' | 'services' | 'skills' | 'settings';
+type AdminTab = 'works' | 'current' | 'upcoming' | 'services' | 'skills' | 'settings' | 'inquiries';
 
 export const AdminPage: React.FC = () => {
   const {
@@ -36,6 +44,7 @@ export const AdminPage: React.FC = () => {
     services,
     skills,
     settings,
+    inquiries,
     isAdmin,
     loginAdmin,
     logoutAdmin,
@@ -53,7 +62,10 @@ export const AdminPage: React.FC = () => {
     deleteService,
     updateSkill,
     updateSettings,
+    syncAllToFirebase,
     resetToDefaults,
+    updateInquiryStatus,
+    deleteInquiry,
   } = usePortfolio();
 
   const { showToast } = useToast();
@@ -61,6 +73,7 @@ export const AdminPage: React.FC = () => {
   // Authentication State
   const [password, setPassword] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [isSyncingFirebase, setIsSyncingFirebase] = useState(false);
 
   // Active Management Tab
   const [activeTab, setActiveTab] = useState<AdminTab>('works');
@@ -289,13 +302,24 @@ export const AdminPage: React.FC = () => {
     }
   };
 
-  // --- Handlers for Settings ---
+  // --- Handlers for Settings & Firestore Sync ---
   const handleSaveSettings = async () => {
     try {
       await updateSettings(localSettings);
-      showToast('success', 'Settings Saved', 'Site configuration has been synchronized.');
+      showToast('success', 'Settings Saved', 'Site configuration and admin settings synchronized.');
     } catch {
       showToast('error', 'Save Failed', 'Unable to save site settings.');
+    }
+  };
+
+  const handleTriggerSyncAll = async () => {
+    try {
+      setIsSyncingFirebase(true);
+      await syncAllToFirebase();
+    } catch {
+      showToast('error', 'Sync Error', 'Failed to synchronize all records to Firebase.');
+    } finally {
+      setIsSyncingFirebase(false);
     }
   };
 
@@ -344,7 +368,7 @@ export const AdminPage: React.FC = () => {
 
           <div className="pt-4 border-t border-white/10 text-center">
             <span className="text-[11px] font-mono text-slate-500">
-              Default password: <code className="text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-500/20">pog2026</code> or <code className="text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-500/20">LollyistheGOAT6711</code>
+              Admin password: <code className="text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-500/20">LollyistheGOAT6711</code>
             </span>
           </div>
         </div>
@@ -474,6 +498,16 @@ export const AdminPage: React.FC = () => {
               <Plus className="w-4 h-4" />
               <span>+ Add Pipeline Item</span>
             </button>
+
+            <button
+              onClick={handleTriggerSyncAll}
+              disabled={isSyncingFirebase}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-display text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-md shadow-emerald-500/20 interactive-hover ${isSyncingFirebase ? 'opacity-50 cursor-not-allowed' : ''}`}
+              title="Save all works, active projects, pipeline concepts, services, skills, and admin password directly to Firebase Firestore"
+            >
+              <CloudUpload className={`w-4 h-4 ${isSyncingFirebase ? 'animate-bounce' : ''}`} />
+              <span>{isSyncingFirebase ? 'Saving to Cloud...' : 'Sync All to Firebase'}</span>
+            </button>
           </div>
         </div>
 
@@ -485,6 +519,7 @@ export const AdminPage: React.FC = () => {
             { id: 'upcoming', label: 'Upcoming Pipeline', icon: Layers, count: upcomingProjects.length },
             { id: 'services', label: 'Services', icon: Sparkles, count: services.length },
             { id: 'skills', label: 'Skills & Proficiencies', icon: Sliders, count: skills.length },
+            { id: 'inquiries', label: 'Inquiries & Briefs', icon: Inbox, count: inquiries.length },
             { id: 'settings', label: 'Site Settings', icon: Shield },
           ].map((tab) => {
             const Icon = tab.icon;
@@ -502,7 +537,11 @@ export const AdminPage: React.FC = () => {
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
-                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-md bg-white/10 text-slate-300">
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${
+                    tab.id === 'inquiries' && inquiries.filter(i => i.status === 'New').length > 0
+                      ? 'bg-cyan-500 text-slate-950 font-bold'
+                      : 'bg-white/10 text-slate-300'
+                  }`}>
                     {tab.count}
                   </span>
                 )}
@@ -1445,12 +1484,47 @@ export const AdminPage: React.FC = () => {
         {/* --- TAB 6: SETTINGS --- */}
         {activeTab === 'settings' && (
           <div className="p-6 md:p-8 rounded-3xl glass-panel border border-white/10 space-y-6">
-            <div>
-              <h2 className="text-xl font-display font-bold text-white">Global Site Configuration</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Update contact handles, status badges, and biographical text</p>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                  <Shield className="w-5 h-5 text-cyan-400" />
+                  <span>Global Site Configuration & Security</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">Update contact handles, admin access password, and portfolio settings stored in Firebase</p>
+              </div>
+
+              <button
+                onClick={handleTriggerSyncAll}
+                disabled={isSyncingFirebase}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30 text-xs font-display font-semibold uppercase tracking-wider transition-all cursor-pointer"
+              >
+                <CloudUpload className={`w-4 h-4 ${isSyncingFirebase ? 'animate-bounce' : ''}`} />
+                <span>{isSyncingFirebase ? 'Syncing to Cloud...' : 'Sync All Data to Firestore'}</span>
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {/* Admin Password Field */}
+              <div className="space-y-1.5 p-4 rounded-2xl bg-cyan-950/20 border border-cyan-500/30 md:col-span-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-mono text-cyan-300 flex items-center gap-1.5 font-bold">
+                    <KeyRound className="w-4 h-4 text-cyan-400" />
+                    <span>Admin Panel Password (Saved to Firestore)</span>
+                  </label>
+                  <span className="text-[10px] font-mono text-slate-400">Current: LollyistheGOAT6711</span>
+                </div>
+                <input
+                  type="text"
+                  value={localSettings.admin_password || 'LollyistheGOAT6711'}
+                  onChange={(e) => setLocalSettings({ ...localSettings, admin_password: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm font-mono border-cyan-500/40 focus:border-cyan-400"
+                  placeholder="LollyistheGOAT6711"
+                />
+                <p className="text-[11px] font-mono text-slate-400">
+                  This credential is authenticated when accessing the POG Admin CMS.
+                </p>
+              </div>
+
               <div className="space-y-1.5">
                 <label className="text-xs font-mono text-slate-300">Discord Handle</label>
                 <input
@@ -1463,57 +1537,209 @@ export const AdminPage: React.FC = () => {
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Roblox Profile Handle</label>
+                <label className="text-xs font-mono text-slate-300">Roblox Username</label>
                 <input
                   type="text"
-                  value={localSettings.roblox_profile || ''}
-                  onChange={(e) => setLocalSettings({ ...localSettings, roblox_profile: e.target.value })}
+                  value={localSettings.roblox || ''}
+                  onChange={(e) => setLocalSettings({ ...localSettings, roblox: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm"
                   placeholder="opmasteraarav1"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Commission Status</label>
+                <label className="text-xs font-mono text-slate-300">Roblox Profile URL</label>
                 <input
                   type="text"
-                  value={localSettings.commission_status || ''}
-                  onChange={(e) => setLocalSettings({ ...localSettings, commission_status: e.target.value })}
+                  value={localSettings.roblox_profile_url || ''}
+                  onChange={(e) => setLocalSettings({ ...localSettings, roblox_profile_url: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm"
-                  placeholder="OPEN FOR COMMISSIONS"
+                  placeholder="https://www.roblox.com/users/profile?username=opmasteraarav1"
                 />
               </div>
 
               <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-300">Flagship Project Name</label>
+                <label className="text-xs font-mono text-slate-300">Site Name / Display Title</label>
                 <input
                   type="text"
-                  value={localSettings.flagship_project || ''}
-                  onChange={(e) => setLocalSettings({ ...localSettings, flagship_project: e.target.value })}
+                  value={localSettings.site_name || ''}
+                  onChange={(e) => setLocalSettings({ ...localSettings, site_name: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm"
-                  placeholder="TRIGGER"
+                  placeholder="POG"
                 />
               </div>
 
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Hero Tagline</label>
+                <input
+                  type="text"
+                  value={localSettings.hero_tagline || ''}
+                  onChange={(e) => setLocalSettings({ ...localSettings, hero_tagline: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm"
+                  placeholder="Roblox 3D Modeler & Digital Artist"
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-xs font-mono text-slate-300">Commissions Availability</label>
+                <div className="flex items-center gap-3 pt-2">
+                  <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={localSettings.available_for_hire !== false}
+                      onChange={(e) => setLocalSettings({ ...localSettings, available_for_hire: e.target.checked })}
+                      className="w-4 h-4 rounded accent-cyan-400"
+                    />
+                    <span className="text-xs font-mono">Available for Hire & Commissions</span>
+                  </label>
+                </div>
+              </div>
+
               <div className="space-y-1.5 md:col-span-2">
-                <label className="text-xs font-mono text-slate-300">Hero Bio / Tagline</label>
+                <label className="text-xs font-mono text-slate-300">About Description & Bio</label>
                 <textarea
                   rows={3}
-                  value={localSettings.bio || ''}
-                  onChange={(e) => setLocalSettings({ ...localSettings, bio: e.target.value })}
+                  value={localSettings.about_description || ''}
+                  onChange={(e) => setLocalSettings({ ...localSettings, about_description: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm resize-none"
+                  placeholder="Yo! I'm POG, a Roblox 3D modeler focused on creating clean, optimized, game-ready assets in Blender..."
                 />
               </div>
             </div>
 
-            <div className="flex justify-end pt-4 border-t border-white/10">
+            <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
               <button
                 onClick={handleSaveSettings}
                 className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-display text-xs font-bold uppercase tracking-wider transition-all cursor-pointer shadow-lg shadow-cyan-500/25"
               >
-                Save Site Settings
+                Save Site Settings & Password
               </button>
             </div>
+          </div>
+        )}
+
+        {/* --- TAB 7: INQUIRIES & CONTACT BRIEFS (FIREBASE) --- */}
+        {activeTab === 'inquiries' && (
+          <div className="space-y-6">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-display font-bold text-white flex items-center gap-2">
+                  <Inbox className="w-5 h-5 text-cyan-400" />
+                  <span>Client Commission Inquiries</span>
+                </h2>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Real-time briefs submitted through the Contact page and stored in Firebase Firestore.
+                </p>
+              </div>
+
+              <div className="text-xs font-mono text-cyan-400 flex items-center gap-2 bg-cyan-500/10 border border-cyan-500/20 px-3 py-1.5 rounded-xl">
+                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                <span>{inquiries.length} Total Messages</span>
+              </div>
+            </div>
+
+            {inquiries.length === 0 ? (
+              <div className="p-12 rounded-3xl glass-panel border border-white/10 text-center space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 mx-auto">
+                  <Inbox className="w-6 h-6" />
+                </div>
+                <h3 className="font-display font-bold text-white text-base">No Inquiries Yet</h3>
+                <p className="text-xs font-mono text-slate-400 max-w-md mx-auto">
+                  When potential clients submit briefs through the Contact page form, they will appear here in real-time.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {inquiries.map((inq) => {
+                  const statusColors: Record<string, string> = {
+                    New: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/40',
+                    'In Review': 'bg-amber-500/20 text-amber-300 border-amber-500/40',
+                    Accepted: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40',
+                    Archived: 'bg-slate-500/20 text-slate-400 border-slate-500/40',
+                  };
+
+                  return (
+                    <div
+                      key={inq.id}
+                      className="p-6 rounded-2xl glass-panel border border-white/10 hover:border-cyan-500/30 transition-all space-y-4 shadow-lg"
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-white/10">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center text-cyan-400 font-bold font-display">
+                            {inq.name.charAt(0).toUpperCase()}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="font-display font-bold text-base text-white">{inq.name}</h3>
+                              <span className={`text-[10px] font-mono font-semibold px-2 py-0.5 rounded-full border ${statusColors[inq.status] || statusColors.New}`}>
+                                {inq.status}
+                              </span>
+                            </div>
+                            <p className="text-xs font-mono text-slate-400">
+                              Contact: <span className="text-cyan-400 font-semibold">{inq.handle}</span> • Service: <span className="text-slate-300">{inq.service}</span>
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <select
+                            value={inq.status}
+                            onChange={(e) => updateInquiryStatus(inq.id, e.target.value as Inquiry['status'])}
+                            className="bg-slate-900 border border-white/10 rounded-xl px-3 py-1.5 text-xs font-mono text-slate-300 focus:border-cyan-500 focus:outline-none cursor-pointer"
+                          >
+                            <option value="New">Status: New</option>
+                            <option value="In Review">Status: In Review</option>
+                            <option value="Accepted">Status: Accepted</option>
+                            <option value="Archived">Status: Archived</option>
+                          </select>
+
+                          <button
+                            onClick={() => {
+                              setDeleteConfirm({
+                                isOpen: true,
+                                title: `Delete inquiry from "${inq.name}"?`,
+                                description: 'This brief will be permanently removed from Firebase.',
+                                onConfirm: () => deleteInquiry(inq.id),
+                              });
+                            }}
+                            className="p-2 rounded-xl bg-white/5 hover:bg-red-500/20 text-slate-400 hover:text-red-400 border border-white/10 transition-colors cursor-pointer"
+                            title="Delete Inquiry"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 rounded-xl bg-white/[0.02] border border-white/5 text-xs font-mono">
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">POLY BUDGET</span>
+                          <span className="text-slate-300 font-medium">{inq.polyBudget || 'Flexible'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">TIMELINE</span>
+                          <span className="text-slate-300 font-medium">{inq.timeline || 'Flexible'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">PRICE / BUDGET</span>
+                          <span className="text-slate-300 font-medium">{inq.budget || 'Quote Requested'}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">SUBMITTED AT</span>
+                          <span className="text-slate-400">{new Date(inq.created_at).toLocaleDateString()}</span>
+                        </div>
+                      </div>
+
+                      <div className="p-4 rounded-xl bg-black/40 border border-white/5 space-y-1">
+                        <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500">Project Brief & Details:</span>
+                        <p className="text-xs text-slate-200 whitespace-pre-wrap leading-relaxed">
+                          {inq.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

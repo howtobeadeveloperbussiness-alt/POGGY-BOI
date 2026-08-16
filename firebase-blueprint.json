@@ -1,0 +1,172 @@
+{
+  "entities": {
+    "Project": {
+      "title": "Project",
+      "description": "3D modeling portfolio projects and asset showcase",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "title": { "type": "string", "description": "Title of the project or weapon" },
+        "slug": { "type": "string", "description": "URL-friendly slug" },
+        "description": { "type": "string", "description": "Detailed project summary" },
+        "category": { "type": "string", "description": "Category such as Weapons, Props, Environment, Low Poly, Stylized" },
+        "status": { "type": "string", "description": "Status (e.g. Completed, In Progress)" },
+        "image_url": { "type": "string", "description": "Primary banner or thumbnail image" },
+        "gallery_images": { "type": "array", "items": { "type": "string" }, "description": "Gallery view images" },
+        "tools": { "type": "array", "items": { "type": "string" }, "description": "Tools used (Blender, Studio, etc)" },
+        "software": { "type": "string", "description": "Primary modeling software" },
+        "poly_count": { "type": "string", "description": "Polygon / triangle count" },
+        "featured": { "type": "boolean", "description": "Whether featured on homepage" },
+        "sort_order": { "type": "number", "description": "Display order" },
+        "created_at": { "type": "string", "description": "Creation ISO timestamp" },
+        "updated_at": { "type": "string", "description": "Update ISO timestamp" }
+      },
+      "required": ["title", "category"]
+    },
+    "CurrentProject": {
+      "title": "CurrentProject",
+      "description": "Active in-development games and experiences like TRIGGER",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "title": { "type": "string", "description": "Game title" },
+        "slug": { "type": "string", "description": "URL-friendly slug" },
+        "description": { "type": "string", "description": "Description of the game experience" },
+        "category": { "type": "string", "description": "Category" },
+        "status": { "type": "string", "description": "Status (In Development, Active)" },
+        "progress": { "type": "number", "description": "Completion percentage (0-100)" },
+        "image_url": { "type": "string", "description": "Cover banner image" },
+        "gallery_images": { "type": "array", "items": { "type": "string" }, "description": "Gallery images" },
+        "features": { "type": "array", "items": { "type": "string" }, "description": "Key gameplay and visual features" },
+        "roblox_url": { "type": "string", "description": "Roblox game link" },
+        "featured": { "type": "boolean", "description": "Whether featured prominently" },
+        "sort_order": { "type": "number", "description": "Display order" },
+        "created_at": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["title", "progress"]
+    },
+    "UpcomingProject": {
+      "title": "UpcomingProject",
+      "description": "Planned and upcoming pipeline projects",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "title": { "type": "string", "description": "Concept project title" },
+        "description": { "type": "string", "description": "Concept description" },
+        "category": { "type": "string", "description": "Category" },
+        "status": { "type": "string", "description": "Concept or Planning" },
+        "image_url": { "type": "string", "description": "Concept artwork image" },
+        "estimated_date": { "type": "string", "description": "Estimated timeline" },
+        "featured": { "type": "boolean", "description": "Whether featured" },
+        "sort_order": { "type": "number", "description": "Sort order" },
+        "created_at": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["title"]
+    },
+    "Service": {
+      "title": "Service",
+      "description": "Commission and 3D modeling services offered",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "title": { "type": "string", "description": "Service name" },
+        "description": { "type": "string", "description": "Detailed explanation" },
+        "icon": { "type": "string", "description": "Lucide icon name" },
+        "sort_order": { "type": "number", "description": "Sort order" },
+        "active": { "type": "boolean", "description": "Whether currently available" },
+        "highlights": { "type": "array", "items": { "type": "string" }, "description": "Bullet points" },
+        "created_at": { "type": "string", "description": "Creation timestamp" }
+      },
+      "required": ["title", "description"]
+    },
+    "Skill": {
+      "title": "Skill",
+      "description": "Technical skill or tool proficiency",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "name": { "type": "string", "description": "Skill name (e.g. Blender)" },
+        "category": { "type": "string", "description": "Category" },
+        "description": { "type": "string", "description": "Brief description" },
+        "proficiency": { "type": "number", "description": "Percentage (0-100)" },
+        "icon": { "type": "string", "description": "Lucide icon name" },
+        "sort_order": { "type": "number", "description": "Sort order" },
+        "active": { "type": "boolean", "description": "Active status" }
+      },
+      "required": ["name", "proficiency"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global portfolio configuration and contact info",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Config identifier" },
+        "site_name": { "type": "string", "description": "Site name" },
+        "hero_title": { "type": "string", "description": "Hero section title" },
+        "hero_tagline": { "type": "string", "description": "Tagline" },
+        "hero_description": { "type": "string", "description": "Hero subtext" },
+        "about_title": { "type": "string", "description": "About section title" },
+        "about_description": { "type": "string", "description": "About summary" },
+        "about_bio": { "type": "string", "description": "Detailed bio" },
+        "discord": { "type": "string", "description": "Discord handle" },
+        "roblox": { "type": "string", "description": "Roblox username" },
+        "roblox_profile_url": { "type": "string", "description": "Roblox profile URL" },
+        "footer_description": { "type": "string", "description": "Footer copy" },
+        "seo_title": { "type": "string", "description": "SEO title" },
+        "seo_description": { "type": "string", "description": "SEO description" },
+        "available_for_hire": { "type": "boolean", "description": "Commissions open" },
+        "admin_password": { "type": "string", "description": "Admin access password" },
+        "updated_at": { "type": "string", "description": "Update timestamp" }
+      },
+      "required": ["site_name"]
+    },
+    "Inquiry": {
+      "title": "Inquiry",
+      "description": "Commission briefs and contact inquiries submitted by clients",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier" },
+        "name": { "type": "string", "description": "Client name or studio" },
+        "handle": { "type": "string", "description": "Discord or Roblox handle" },
+        "service": { "type": "string", "description": "Requested service" },
+        "polyBudget": { "type": "string", "description": "Polygon count tier" },
+        "timeline": { "type": "string", "description": "Target timeline" },
+        "budget": { "type": "string", "description": "Budget in USD or Robux" },
+        "description": { "type": "string", "description": "Detailed project brief" },
+        "status": { "type": "string", "description": "Status (New, In Review, Completed, Archived)" },
+        "created_at": { "type": "string", "description": "Submission ISO timestamp" }
+      },
+      "required": ["name", "handle", "description"]
+    }
+  },
+  "firestore": {
+    "projects": {
+      "entity": "Project",
+      "description": "Collection of 3D portfolio projects"
+    },
+    "current_projects": {
+      "entity": "CurrentProject",
+      "description": "Active in-development experiences"
+    },
+    "upcoming_projects": {
+      "entity": "UpcomingProject",
+      "description": "Pipeline concept projects"
+    },
+    "services": {
+      "entity": "Service",
+      "description": "Services list"
+    },
+    "skills": {
+      "entity": "Skill",
+      "description": "Skill proficiencies"
+    },
+    "site_settings": {
+      "entity": "SiteSettings",
+      "description": "Site global configuration"
+    },
+    "inquiries": {
+      "entity": "Inquiry",
+      "description": "Commission briefs and inquiries"
+    }
+  }
+}

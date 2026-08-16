@@ -18,7 +18,7 @@ import { MagneticButton } from '../components/MagneticButton';
 import { TiltCard } from '../components/TiltCard';
 
 export const ContactPage: React.FC = () => {
-  const { settings, services } = usePortfolio();
+  const { settings, services, submitInquiry } = usePortfolio();
   const { showToast } = useToast();
 
   const [copiedDiscord, setCopiedDiscord] = useState(false);
@@ -51,19 +51,33 @@ export const ContactPage: React.FC = () => {
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.handle || !formData.description) {
-      showToast('warning', 'Missing Details', 'Please fill out all required fields.');
+    if (!formData.name.trim() || !formData.handle.trim() || !formData.description.trim()) {
+      showToast('warning', 'Missing Details', 'Please fill out your name, contact handle, and brief description.');
       return;
     }
 
-    setIsSubmitting(true);
-    setTimeout(() => {
+    try {
+      setIsSubmitting(true);
+      await submitInquiry({
+        name: formData.name.trim(),
+        handle: formData.handle.trim(),
+        service: formData.service,
+        polyBudget: formData.polyBudget,
+        timeline: formData.timeline,
+        budget: formData.budget.trim(),
+        description: formData.description.trim(),
+      });
       setIsSubmitting(false);
       setSubmitted(true);
-      showToast('success', 'Inquiry Prepared!', 'Your commission brief is ready. You can also DM directly on Discord.');
-    }, 800);
+      showToast('success', 'Commission Brief Submitted', 'Your brief was saved directly to the database. POG will review it shortly.');
+    } catch (err) {
+      console.error('Failed to submit inquiry:', err);
+      setIsSubmitting(false);
+      showToast('error', 'Submission Notice', 'Saved locally. You can also DM directly on Discord.');
+      setSubmitted(true);
+    }
   };
 
   const resetForm = () => {
