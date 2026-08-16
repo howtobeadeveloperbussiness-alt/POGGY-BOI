@@ -1,17 +1,17 @@
 import React, { useState, useRef } from 'react';
-import { 
-  Shield, 
-  Lock, 
-  LogOut, 
-  Plus, 
-  Pencil, 
-  Trash2, 
-  RotateCcw, 
-  Sparkles, 
-  FolderKanban, 
-  Activity, 
-  Layers, 
-  Sliders, 
+import {
+  Shield,
+  Lock,
+  LogOut,
+  Plus,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  Sparkles,
+  FolderKanban,
+  Activity,
+  Layers,
+  Sliders,
   Image as ImageIcon,
   ExternalLink,
   Upload,
@@ -88,7 +88,7 @@ export const AdminPage: React.FC = () => {
     isOpen: false,
     title: '',
     description: '',
-    onConfirm: () => {},
+    onConfirm: () => { },
   });
 
   // Edit / Add State for Works (3D Models)
@@ -177,7 +177,7 @@ export const AdminPage: React.FC = () => {
         category: editingWork.category,
         image_url: editingWork.image_url || '/assets/banner.png',
         gallery_images: editingWork.gallery_images && editingWork.gallery_images.length > 0
-          ? editingWork.gallery_images 
+          ? editingWork.gallery_images
           : [editingWork.image_url || '/assets/banner.png'],
         tools: editingWork.tools && editingWork.tools.length > 0 ? editingWork.tools : ['Blender', 'Roblox Studio'],
         software: editingWork.software || 'Blender',
@@ -365,12 +365,6 @@ export const AdminPage: React.FC = () => {
               <span>{authLoading ? 'Verifying...' : 'Access Dashboard'}</span>
             </button>
           </form>
-
-          <div className="pt-4 border-t border-white/10 text-center">
-            <span className="text-[11px] font-mono text-slate-500">
-              Admin password: <code className="text-cyan-400 bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-500/20">LollyistheGOAT6711</code>
-            </span>
-          </div>
         </div>
       </div>
     );
@@ -379,7 +373,7 @@ export const AdminPage: React.FC = () => {
   return (
     <div className="min-h-screen pt-28 pb-24 px-6 lg:px-12">
       <div className="max-w-7xl mx-auto space-y-8">
-        
+
         {/* Header with Admin status & Logout */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-white/10">
           <div className="space-y-1">
@@ -528,20 +522,18 @@ export const AdminPage: React.FC = () => {
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as AdminTab)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-display text-xs uppercase tracking-wider transition-all cursor-pointer ${
-                  isActive
-                    ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-semibold shadow-sm shadow-cyan-500/20'
-                    : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-display text-xs uppercase tracking-wider transition-all cursor-pointer ${isActive
+                  ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 font-semibold shadow-sm shadow-cyan-500/20'
+                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                  }`}
               >
                 <Icon className="w-4 h-4" />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
-                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${
-                    tab.id === 'inquiries' && inquiries.filter(i => i.status === 'New').length > 0
-                      ? 'bg-cyan-500 text-slate-950 font-bold'
-                      : 'bg-white/10 text-slate-300'
-                  }`}>
+                  <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-md ${tab.id === 'inquiries' && inquiries.filter(i => i.status === 'New').length > 0
+                    ? 'bg-cyan-500 text-slate-950 font-bold'
+                    : 'bg-white/10 text-slate-300'
+                    }`}>
                     {tab.count}
                   </span>
                 )}
@@ -1509,19 +1501,19 @@ export const AdminPage: React.FC = () => {
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-mono text-cyan-300 flex items-center gap-1.5 font-bold">
                     <KeyRound className="w-4 h-4 text-cyan-400" />
-                    <span>Admin Panel Password (Saved to Firestore)</span>
+                    <span>Admin Panel Password (Firestore Secured)</span>
                   </label>
-                  <span className="text-[10px] font-mono text-slate-400">Current: LollyistheGOAT6711</span>
+                  <span className="text-[10px] font-mono text-slate-400">Change password anytime</span>
                 </div>
                 <input
-                  type="text"
-                  value={localSettings.admin_password || 'LollyistheGOAT6711'}
+                  type="password"
+                  value={localSettings.admin_password || ''}
                   onChange={(e) => setLocalSettings({ ...localSettings, admin_password: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl glass-input text-white text-sm font-mono border-cyan-500/40 focus:border-cyan-400"
-                  placeholder="LollyistheGOAT6711"
+                  placeholder="Enter new admin password"
                 />
                 <p className="text-[11px] font-mono text-slate-400">
-                  This credential is authenticated when accessing the POG Admin CMS.
+                  This password is saved securely to Firestore and used to authorize administrative changes.
                 </p>
               </div>
 
@@ -1754,9 +1746,9 @@ export const AdminPage: React.FC = () => {
         danger
         onConfirm={() => {
           deleteConfirm.onConfirm();
-          setDeleteConfirm({ isOpen: false, title: '', description: '', onConfirm: () => {} });
+          setDeleteConfirm({ isOpen: false, title: '', description: '', onConfirm: () => { } });
         }}
-        onCancel={() => setDeleteConfirm({ isOpen: false, title: '', description: '', onConfirm: () => {} })}
+        onCancel={() => setDeleteConfirm({ isOpen: false, title: '', description: '', onConfirm: () => { } })}
       />
     </div>
   );
