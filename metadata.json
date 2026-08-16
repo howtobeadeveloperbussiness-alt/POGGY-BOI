@@ -1,0 +1,6 @@
+{
+  "name": "POG — Roblox 3D Modeler Portfolio",
+  "description": "Portfolio platform for POG, a Roblox 3D modeler and digital artist specializing in clean, optimized, game-ready weapons, props, environment assets, and stylized models in Blender.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
